@@ -73,7 +73,7 @@ before_install:
 before_script:
   - ./configure ${CONFIG}
 script:
-  - make -j3 && ${TEST_CMD}
+  - echo "would make -j3 && ${TEST_CMD}"
 matrix:
   include:
     # Test with CLang for compile portability
@@ -227,10 +227,10 @@ matrix:
         - COVERITY_BUILD_CMD="make -j3"
         - COVERITY_EMAIL=peter.maydell@linaro.org
         # This 'secure' setting sets COVERITY_TOKEN=<secret token>
-        # and was created with travis encrypt -r qemu/qemu COVERITY_TOKEN=...
-        - secure: "D3E6E5bacui53fYBQrx0wQr8ZTvo6VIBPKfg0QHj2uwa6OPFkUlcMr/EHWvdbZNAa4Q1bv1vhlED5OPRfPmQYzxQNT4SAxDZeuZnikgIymfqQXNOjKw4kRUDO9P42QanyFd+EAu2JDVClAeJPgBpa/ns4CNrGDK+Q3coGndCP8o="
+        # and was created with travis encrypt -r pm215/qemu COVERITY_TOKEN=...
+        - secure: "VdlcSYk1ubCGsZrdWCo5kLEwHEZWnB5AGDQWIQvbOKpUVOOLvR5c4oBiAyNo6miUAQLKihjlIuFnjkqJnUMgw+vng7FQzbeucSj9wpdTEeRT+PXLIUFXiyB+o60fHs7dzbeS63HoVW4YVVWekxjTvG6u1jPcSrLWyq+i//tuVzOj1vBgCbL9/HvXbNN28YEc/1LrFhbfzrKHkP54eh8iR+HQPw5amoe7GCbFHpUpxa19o+3rh4MuU3duVWY1E2xTn9P01oCobxICwQEa1JO1BWKO2CRiEyMmzJegsTk8ZdWf4RZVPxLQOfgvDLIvn0Wkj05VqyX8myI6hW+0zJwgG+8zTVkVcoRlORA1v+5E8DaL5Okwf+ZHcdbg5WlBMRCDOBYwlrq0ehetRcIw9XDVs/Hm5pBsKmV5T2VPqsHMiYv8ETtztPe9ws7za+URMxyEfbhN1VXsPBXMGfLdzANNrYVHTHb65OHmhW9JGkaqmv+Ykq9oWobsCJuFoTzR7x611Izwz8lcaT6ytN5q2s10qW53Mqqggm/oNbDfh6nwYiq/FfLbCyoGhW07qqLMf/797H7hGRX+7PXL/cEDoueIhVFELUoFCOlLrbxMLuAQ/yJDZwVh35i/h91DtgLJAmKASVHMI8UVqtrexYQbTdA62N73vqgetYtZlmIrAkE4Dz8="
       before_script:
         - if [ "$TRAVIS_PULL_REQUEST" = "true" ]; then echo "Skipping Coverity (pullreq)"; exit 0; fi
-        - if [ "$TRAVIS_BRANCH" != "master" ]; then echo "Skipping Coverity (wrong branch)"; exit 0; fi
+        - if [ "$TRAVIS_BRANCH" != "travis-cov" ]; then echo "Skipping Coverity (wrong branch)"; exit 0; fi
       script:
         - ./scripts/run-coverity-scan
