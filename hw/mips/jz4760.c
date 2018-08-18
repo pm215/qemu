@@ -52,6 +52,8 @@ static void jz4760_init(Object *obj)
 
     sysbus_init_child_obj(obj, "intc", &s->intc, sizeof(s->intc),
                           TYPE_JZ4760_INTC);
+    sysbus_init_child_obj(obj, "cpm", &s->cpm, sizeof(s->cpm),
+                          TYPE_JZ4760_CPM);
 }
 
 static void main_cpu_reset(void *opaque)
@@ -108,7 +110,15 @@ static void jz4760_realize(DeviceState *dev, Error **errp)
     memory_region_add_subregion(&s->container, 0x00000000, &s->sram_alias);
 
     /* APB bus devices */
-    create_unimplemented_device("CPM",    0x10000000, 0x1000);
+
+    /* CPM */
+    object_property_set_bool(OBJECT(&s->cpm), true, "realized", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->cpm), 0);
+    memory_region_add_subregion(&s->container, 0x10000000, mr);
 
     /* INTC */
     object_property_set_bool(OBJECT(&s->intc), true, "realized", &err);
