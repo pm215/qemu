@@ -59,6 +59,13 @@ static void jz4760_init(Object *obj)
                           TYPE_JZ4760_INTC);
     sysbus_init_child_obj(obj, "cpm", &s->cpm, sizeof(s->cpm),
                           TYPE_JZ4760_CPM);
+
+    sysbus_init_child_obj(obj, "mdmac", &s->mdmac, sizeof(s->mdmac),
+                          TYPE_JZ4760_DMA);
+    sysbus_init_child_obj(obj, "dmac", &s->dmac, sizeof(s->dmac),
+                          TYPE_JZ4760_DMA);
+    sysbus_init_child_obj(obj, "bdmac", &s->bdmac, sizeof(s->bdmac),
+                          TYPE_JZ4760_DMA);
 }
 
 static void main_cpu_reset(void *opaque)
@@ -174,7 +181,27 @@ static void jz4760_realize(DeviceState *dev, Error **errp)
     create_unimplemented_device("HARB0",  0x13000000, 0x10000);
     create_unimplemented_device("EMC",    0x13010000, 0x10000);
     create_unimplemented_device("DDRC",   0x13020000, 0x10000);
-    create_unimplemented_device("MDMAC",  0x13030000, 0x10000);
+
+    /* MDMAC */
+    object_property_set_uint(OBJECT(&s->mdmac), 2, "num-channels", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    object_property_set_link(OBJECT(&s->mdmac), OBJECT(&s->container),
+                             "downstream", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    object_property_set_bool(OBJECT(&s->mdmac), true, "realized", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->mdmac), 0);
+    memory_region_add_subregion(&s->container, 0x13030000, mr);
+
     create_unimplemented_device("LCDC",   0x13050000, 0x10000);
     create_unimplemented_device("CIM",    0x13060000, 0x10000);
     /* The AOSD (on-screen display) device is not listed in the data sheet... */
@@ -198,10 +225,55 @@ static void jz4760_realize(DeviceState *dev, Error **errp)
     /* AHB2 bus devices */
     create_unimplemented_device("HARB2",  0x13400000, 0x10000);
     create_unimplemented_device("NEMC",   0x13410000, 0x10000);
-    create_unimplemented_device("DMAC",   0x13420000, 0x10000);
+
+    /* DMAC */
+    object_property_set_uint(OBJECT(&s->dmac), 2, "num-cores", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    object_property_set_uint(OBJECT(&s->dmac), 5, "num-channels", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    object_property_set_link(OBJECT(&s->dmac), OBJECT(&s->container),
+                             "downstream", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    object_property_set_bool(OBJECT(&s->dmac), true, "realized", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->dmac), 0);
+    memory_region_add_subregion(&s->container, 0x13420000, mr);
+
     create_unimplemented_device("UHC",    0x13430000, 0x10000);
     create_unimplemented_device("EDC",    0x13440000, 0x10000);
-    create_unimplemented_device("BDMAC",  0x13450000, 0x10000);
+
+    /* BDMAC */
+    object_property_set_uint(OBJECT(&s->bdmac), 3, "num-channels", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    object_property_set_link(OBJECT(&s->bdmac), OBJECT(&s->container),
+                             "downstream", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    object_property_set_bool(OBJECT(&s->bdmac), true, "realized", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->bdmac), 0);
+    memory_region_add_subregion(&s->container, 0x13450000, mr);
+
     create_unimplemented_device("GPS",    0x13480000, 0x10000);
     create_unimplemented_device("ETHC",   0x134B0000, 0x10000);
     create_unimplemented_device("BCH",    0x134D0000, 0x10000);

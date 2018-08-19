@@ -24,6 +24,7 @@
 #include "hw/misc/unimp.h"
 #include "hw/intc/jz4760-intc.h"
 #include "hw/misc/jz4760-cpm.h"
+#include "hw/dma/jz4760-dma.h"
 #include "target/mips/cpu.h"
 
 #define TYPE_JZ4760 "jz4760"
@@ -40,6 +41,9 @@ typedef struct JZ4760 {
     MemoryRegion sram_alias;
     JZ4760INTC intc;
     JZ4760CPM cpm;
+    JZ4760DMA mdmac;
+    JZ4760DMA dmac;
+    JZ4760DMA bdmac;
 
     /* Properties */
     MemoryRegion *board_memory;
