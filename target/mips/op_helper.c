@@ -4331,6 +4331,21 @@ void helper_cache(CPUMIPSState *env, target_ulong addr, uint32_t op)
 {
 #ifndef CONFIG_USER_ONLY
     target_ulong index = addr & 0x1fffffff;
+
+    if (op == 3) {
+        /* QEMU special */
+        qemu_mutex_lock_iothread();
+        mips_enable_cacheram(env);
+        qemu_mutex_unlock_iothread();
+        return;
+    } else if (op == 1) {
+        /* index writeback inv D */
+        qemu_mutex_lock_iothread();
+        mips_disable_cacheram(env);
+        qemu_mutex_unlock_iothread();
+        return;
+    }
+
     if (op == 9) {
         /* Index Store Tag */
         memory_region_dispatch_write(env->itc_tag, index, env->CP0_TagLo,

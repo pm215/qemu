@@ -125,6 +125,7 @@ static void mips_cpu_realizefn(DeviceState *dev, Error **errp)
     CPUState *cs = CPU(dev);
     MIPSCPU *cpu = MIPS_CPU(dev);
     MIPSCPUClass *mcc = MIPS_CPU_GET_CLASS(dev);
+    CPUMIPSState *env = &cpu->env;
     Error *local_err = NULL;
 
     cpu_exec_realizefn(cs, &local_err);
@@ -134,6 +135,16 @@ static void mips_cpu_realizefn(DeviceState *dev, Error **errp)
     }
 
     cpu_mips_realize_env(&cpu->env);
+
+    memory_region_init_ram(&env->cacheram, OBJECT(dev),
+                           "mips-cacheram", MIPS_CACHERAM_SIZE, &local_err);
+    if (local_err != NULL) {
+        error_propagate(errp, local_err);
+        return;
+    }
+    mips_disable_cacheram(env);
+    memory_region_add_subregion_overlap(cs->memory, MIPS_CACHERAM_BASE,
+                                        &env->cacheram, INT_MAX);
 
     cpu_reset(cs);
     qemu_init_vcpu(cs);

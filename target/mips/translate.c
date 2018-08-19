@@ -11945,8 +11945,18 @@ static void gen_addiupc (DisasContext *ctx, int rx, int imm,
 static void gen_cache_operation(DisasContext *ctx, uint32_t op, int base,
                                 int16_t offset)
 {
-    TCGv_i32 t0 = tcg_const_i32(op);
-    TCGv t1 = tcg_temp_new();
+    TCGv_i32 t0;
+    TCGv t1;
+
+    /*
+     * Allow through the impdef jz4760 cache op through as a special case,
+     * and also index-writeback-inv-D to turn off the jz4760 caching
+     */
+    if (op != 3 && op != 1 && !(ctx->hflags & MIPS_HFLAG_ITC_CACHE)) {
+        return;
+    }
+    t0 = tcg_const_i32(op);
+    t1 = tcg_temp_new();
     gen_base_offset_addr(ctx, t1, base, offset);
     gen_helper_cache(cpu_env, t1, t0);
 }
@@ -14579,9 +14589,7 @@ static void decode_micromips32_opc(CPUMIPSState *env, DisasContext *ctx)
         switch (minor) {
         case CACHE:
             check_cp0_enabled(ctx);
-            if (ctx->hflags & MIPS_HFLAG_ITC_CACHE) {
-                gen_cache_operation(ctx, rt, rs, imm);
-            }
+            gen_cache_operation(ctx, rt, rs, imm);
             break;
         case LWC2:
         case SWC2:
@@ -15395,9 +15403,7 @@ static void decode_micromips32_opc(CPUMIPSState *env, DisasContext *ctx)
                 break;
             case CACHEE:
                 /* Treat as no-op */
-                if (ctx->hflags & MIPS_HFLAG_ITC_CACHE) {
-                    gen_cache_operation(ctx, rt, rs, offset);
-                }
+                gen_cache_operation(ctx, rt, rs, offset);
                 break;
             case SBE:
                 mips32_op = OPC_SBE;
@@ -22719,9 +22725,7 @@ static void decode_opc_special3_r6(CPUMIPSState *env, DisasContext *ctx)
         break;
     case R6_OPC_CACHE:
         check_cp0_enabled(ctx);
-        if (ctx->hflags & MIPS_HFLAG_ITC_CACHE) {
-            gen_cache_operation(ctx, rt, rs, imm);
-        }
+        gen_cache_operation(ctx, rt, rs, imm);
         break;
     case R6_OPC_SC:
         gen_st_cond(ctx, op1, rt, rs, imm);
@@ -23358,9 +23362,7 @@ static void decode_opc_special3(CPUMIPSState *env, DisasContext *ctx)
             return;
         case OPC_CACHEE:
             check_cp0_enabled(ctx);
-            if (ctx->hflags & MIPS_HFLAG_ITC_CACHE) {
-                gen_cache_operation(ctx, rt, rs, imm);
-            }
+            gen_cache_operation(ctx, rt, rs, imm);
             /* Treat as NOP. */
             return;
         case OPC_PREFE:
@@ -24926,9 +24928,7 @@ static void decode_opc(CPUMIPSState *env, DisasContext *ctx)
         check_insn_opc_removed(ctx, ISA_MIPS32R6);
         check_cp0_enabled(ctx);
         check_insn(ctx, ISA_MIPS3 | ISA_MIPS32);
-        if (ctx->hflags & MIPS_HFLAG_ITC_CACHE) {
-            gen_cache_operation(ctx, rt, rs, imm);
-        }
+        gen_cache_operation(ctx, rt, rs, imm);
         /* Treat as NOP. */
         break;
     case OPC_PREF:

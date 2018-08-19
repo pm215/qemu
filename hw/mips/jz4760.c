@@ -31,8 +31,13 @@ static void gen_boot_rom(JZ4760 *s)
      * For now we rely on the board code having loaded the code at the
      * right place and just jump straight to 0x80000000.
      * We're assuming little-endian MIPS here...
+     * The cache insn is QEMU specific magic to enable the "execute from
+     * dcache/icache hard-wired in" trick. We borrow the "code 3" impdef
+     * space, which is what the real jz4760 apparently uses for "write
+     * specific data directly into the icache".
      */
     static const uint32_t bootrom[] = {
+        0xbc030000, /* cache impdef */
         0x3c198000, /* lui $25, hi(0x800000A0) */
         0x373900A0, /* ori $25, lo(0x800000A0) */
         0x03200009, /* jr $25 */

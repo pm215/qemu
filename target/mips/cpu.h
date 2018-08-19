@@ -10,6 +10,7 @@
 #include "mips-defs.h"
 #include "exec/cpu-defs.h"
 #include "fpu/softfloat.h"
+#include "exec/memory.h"
 
 struct CPUMIPSState;
 
@@ -632,6 +633,9 @@ struct CPUMIPSState {
     QEMUTimer *timer; /* Internal timer */
     MemoryRegion *itc_tag; /* ITC Configuration Tags */
     target_ulong exception_base; /* ExceptionBase input to the core */
+
+    MemoryRegion cacheram;
+    bool cacheram_enabled;
 };
 
 /**

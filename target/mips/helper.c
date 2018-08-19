@@ -537,6 +537,43 @@ hwaddr mips_cpu_get_phys_page_debug(CPUState *cs, vaddr addr)
 }
 #endif
 
+
+void mips_enable_cacheram(CPUMIPSState *env)
+{
+    void *dest;
+    CPUState *cs = CPU(mips_env_get_cpu(env));
+
+    if (env->cacheram_enabled) {
+        return;
+    }
+
+    /* We must copy the actual RAM into the cache first */
+    dest = memory_region_get_ram_ptr(&env->cacheram);
+    address_space_read(cs->as, 0, MEMTXATTRS_UNSPECIFIED,
+                       dest, MIPS_CACHERAM_SIZE);
+
+    env->cacheram_enabled = true;
+    memory_region_set_enabled(&env->cacheram, env->cacheram_enabled);
+}
+
+void mips_disable_cacheram(CPUMIPSState *env)
+{
+    void *src;
+    CPUState *cs = CPU(mips_env_get_cpu(env));
+
+    if (!env->cacheram_enabled) {
+        return;
+    }
+
+    env->cacheram_enabled = false;
+    memory_region_set_enabled(&env->cacheram, env->cacheram_enabled);
+
+    /* Copy the data out of the cache into the actual RAM */
+    src = memory_region_get_ram_ptr(&env->cacheram);
+    address_space_write(cs->as, 0, MEMTXATTRS_UNSPECIFIED,
+                        src, MIPS_CACHERAM_SIZE);
+}
+
 int mips_cpu_handle_mmu_fault(CPUState *cs, vaddr address, int size, int rw,
                               int mmu_idx)
 {
@@ -560,6 +597,19 @@ int mips_cpu_handle_mmu_fault(CPUState *cs, vaddr address, int size, int rw,
 #if !defined(CONFIG_USER_ONLY)
     /* XXX: put correct access by using cpu_restore_state()
        correctly */
+    if (env->cacheram_enabled &&
+        address >= KSEG0_BASE && address < (KSEG0_BASE + 0x4000)) {
+        /*
+         * If we're in the right range and the cache is locked
+         * down we're going to hit in it regardless
+         */
+        tlb_set_page(cs, address & TARGET_PAGE_MASK,
+                     address & TARGET_PAGE_MASK,
+                     PAGE_READ | PAGE_WRITE | PAGE_EXEC,
+                     mmu_idx, TARGET_PAGE_SIZE);
+        return 0;
+    }
+
     access_type = ACCESS_INT;
     ret = get_physical_address(env, &physical, &prot,
                                address, rw, access_type, mmu_idx);

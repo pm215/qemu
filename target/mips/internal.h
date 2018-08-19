@@ -86,6 +86,12 @@ void mips_cpu_do_unaligned_access(CPUState *cpu, vaddr addr,
 
 #if !defined(CONFIG_USER_ONLY)
 
+#define MIPS_CACHERAM_BASE 0x80000000
+#define MIPS_CACHERAM_SIZE 0x4000
+
+void mips_enable_cacheram(CPUMIPSState *env);
+void mips_disable_cacheram(CPUMIPSState *env);
+
 typedef struct r4k_tlb_t r4k_tlb_t;
 struct r4k_tlb_t {
     target_ulong VPN;
