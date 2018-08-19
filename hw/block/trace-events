@@ -127,3 +127,9 @@ xen_disk_init(char *name) "%s"
 xen_disk_connect(char *name) "%s"
 xen_disk_disconnect(char *name) "%s"
 xen_disk_free(char *name) "%s"
+
+# hw/block/jz4760-nemc.c
+jz4760_nemc_read(uint32_t offset, uint64_t data, unsigned size) "offset 0x%x data 0x%" PRIx64 " size %u"
+jz4760_nemc_write(uint32_t offset, uint64_t data, unsigned size) "offset 0x%x data 0x%" PRIx64 " size %u"
+jz4760_nemc_nand_read(uint32_t offset, uint64_t data, unsigned size) "offset 0x%x data 0x%" PRIx64 " size %u"
+jz4760_nemc_nand_write(uint32_t offset, uint64_t data, unsigned size) "offset 0x%x data 0x%" PRIx64 " size %u"
