@@ -18,6 +18,7 @@
 #include "hw/misc/unimp.h"
 #include "hw/devices.h"
 #include "hw/loader.h"
+#include "hw/block/flash.h"
 #include "exec/address-spaces.h"
 #include "hw/mips/jz4760.h"
 #include "qemu/units.h"
@@ -28,6 +29,7 @@ typedef struct {
     JZ4760 jz4760;
     MemoryRegion sram;
     MemoryRegion sram_alias;
+    DeviceState *nand;
 } XDuooX3MachineState;
 
 #define TYPE_XDUOO_X3_MACHINE MACHINE_TYPE_NAME("xduoo-x3")
@@ -38,11 +40,17 @@ static void xduoo_x3_init(MachineState *machine)
 {
     XDuooX3MachineState *xms = XDUOO_X3_MACHINE(machine);
     MemoryRegion *system_memory = get_system_memory();
+    DriveInfo *dinfo = drive_get_next(IF_MTD);
+
+    xms->nand = nand_init(dinfo ? blk_by_legacy_dinfo(dinfo) : NULL,
+                          0x98, 0xb1);
 
     sysbus_init_child_obj(OBJECT(machine), "jz4760", &xms->jz4760,
                           sizeof(xms->jz4760), TYPE_JZ4760);
     object_property_set_link(OBJECT(&xms->jz4760), OBJECT(system_memory),
                              "memory", &error_fatal);
+    object_property_set_link(OBJECT(&xms->jz4760), OBJECT(xms->nand),
+                             "nand", &error_fatal);
     object_property_set_bool(OBJECT(&xms->jz4760), true, "realized",
                              &error_fatal);
 
