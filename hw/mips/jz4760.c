@@ -68,6 +68,8 @@ static void jz4760_init(Object *obj)
                           TYPE_JZ4760_DMA);
     sysbus_init_child_obj(obj, "nemc", &s->nemc, sizeof(s->nemc),
                           TYPE_JZ4760_NEMC);
+    sysbus_init_child_obj(obj, "gpio", &s->gpio, sizeof(s->gpio),
+                          TYPE_JZ4760_GPIO);
     object_property_add_alias(obj, "nand",
                               OBJECT(&s->nemc), "nand", &error_abort);
 }
@@ -149,7 +151,16 @@ static void jz4760_realize(DeviceState *dev, Error **errp)
 
     create_unimplemented_device("TCU",    0x10002000, 0x1000);
     create_unimplemented_device("RTC",    0x10003000, 0x1000);
-    create_unimplemented_device("GPIO",   0x10010000, 0x1000);
+
+    /* GPIO */
+    object_property_set_bool(OBJECT(&s->gpio), true, "realized", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->gpio), 0);
+    memory_region_add_subregion(&s->container, 0x10010000, mr);
+
     create_unimplemented_device("AIC",    0x10020000, 0x1000);
     create_unimplemented_device("MSC0",   0x10021000, 0x1000);
     create_unimplemented_device("MSC1",   0x10022000, 0x1000);

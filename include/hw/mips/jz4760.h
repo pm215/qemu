@@ -26,6 +26,7 @@
 #include "hw/misc/jz4760-cpm.h"
 #include "hw/dma/jz4760-dma.h"
 #include "hw/block/jz4760-nemc.h"
+#include "hw/gpio/jz4760-gpio.h"
 #include "target/mips/cpu.h"
 
 #define TYPE_JZ4760 "jz4760"
@@ -46,6 +47,7 @@ typedef struct JZ4760 {
     JZ4760DMA dmac;
     JZ4760DMA bdmac;
     JZ4760NEMC nemc;
+    JZ4760GPIO gpio;
 
     /* Properties */
     MemoryRegion *board_memory;
