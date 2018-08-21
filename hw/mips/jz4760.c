@@ -66,6 +66,10 @@ static void jz4760_init(Object *obj)
                           TYPE_JZ4760_DMA);
     sysbus_init_child_obj(obj, "bdmac", &s->bdmac, sizeof(s->bdmac),
                           TYPE_JZ4760_DMA);
+    sysbus_init_child_obj(obj, "nemc", &s->nemc, sizeof(s->nemc),
+                          TYPE_JZ4760_NEMC);
+    object_property_add_alias(obj, "nand",
+                              OBJECT(&s->nemc), "nand", &error_abort);
 }
 
 static void main_cpu_reset(void *opaque)
@@ -224,7 +228,19 @@ static void jz4760_realize(DeviceState *dev, Error **errp)
 
     /* AHB2 bus devices */
     create_unimplemented_device("HARB2",  0x13400000, 0x10000);
-    create_unimplemented_device("NEMC",   0x13410000, 0x10000);
+
+    /* NEMC */
+    object_property_set_bool(OBJECT(&s->nemc), true, "realized", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    /* Registers: */
+    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->nemc), 0);
+    memory_region_add_subregion(&s->container, 0x13410000, mr);
+    /* NAND access region */
+    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->nemc), 1);
+    memory_region_add_subregion(&s->container, 0x14000000, mr);
 
     /* DMAC */
     object_property_set_uint(OBJECT(&s->dmac), 2, "num-cores", &err);
@@ -277,8 +293,6 @@ static void jz4760_realize(DeviceState *dev, Error **errp)
     create_unimplemented_device("GPS",    0x13480000, 0x10000);
     create_unimplemented_device("ETHC",   0x134B0000, 0x10000);
     create_unimplemented_device("BCH",    0x134D0000, 0x10000);
-
-    create_unimplemented_device("NAND", 0x14000000, 0x08000000);
 }
 
 static Property jz4760_properties[] = {
