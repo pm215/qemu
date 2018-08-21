@@ -1,0 +1,5 @@
+# See docs/devel/tracing.txt for syntax documentation.
+
+# hw/block/jz4760-gpio.c
+jz4760_gpio_read(uint32_t offset, uint64_t data, unsigned size) "offset 0x%x data 0x%" PRIx64 " size %u"
+jz4760_gpio_write(uint32_t offset, uint64_t data, unsigned size) "offset 0x%x data 0x%" PRIx64 " size %u"

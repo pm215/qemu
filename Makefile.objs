@@ -212,6 +212,7 @@ trace-events-subdirs += hw/block/dataplane
 trace-events-subdirs += hw/char
 trace-events-subdirs += hw/display
 trace-events-subdirs += hw/dma
+trace-events-subdirs += hw/gpio
 trace-events-subdirs += hw/hppa
 trace-events-subdirs += hw/i2c
 trace-events-subdirs += hw/i386
