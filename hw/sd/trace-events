@@ -56,3 +56,7 @@ milkymist_memcard_memory_write(uint32_t addr, uint32_t value) "addr 0x%08x value
 # hw/sd/pxa2xx_mmci.c
 pxa2xx_mmci_read(uint8_t size, uint32_t addr, uint32_t value) "size %d addr 0x%02x value 0x%08x"
 pxa2xx_mmci_write(uint8_t size, uint32_t addr, uint32_t value) "size %d addr 0x%02x value 0x%08x"
+
+# hw/misc/jz4760-sd.c
+jz4760_sd_read(uint32_t offset, uint64_t data, unsigned size) "offset 0x%x data 0x%" PRIx64 " size %u"
+jz4760_sd_write(uint32_t offset, uint64_t data, unsigned size) "offset 0x%x data 0x%" PRIx64 " size %u"
