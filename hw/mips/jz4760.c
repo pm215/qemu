@@ -50,6 +50,7 @@ static void gen_boot_rom(JZ4760 *s)
 static void jz4760_init(Object *obj)
 {
     JZ4760 *s = JZ4760(obj);
+    int i;
 
     memory_region_init(&s->container, obj, "iotkit-container", UINT64_MAX);
 
@@ -70,6 +71,12 @@ static void jz4760_init(Object *obj)
                           TYPE_JZ4760_NEMC);
     sysbus_init_child_obj(obj, "gpio", &s->gpio, sizeof(s->gpio),
                           TYPE_JZ4760_GPIO);
+    for (i = 0; i < ARRAY_SIZE(s->msc); i++) {
+        char *name = g_strdup_printf("MSC%d", i);
+        sysbus_init_child_obj(obj, name, &s->msc[i], sizeof(s->msc[i]),
+                              TYPE_JZ4760_SD);
+        g_free(name);
+    }
     object_property_add_alias(obj, "nand",
                               OBJECT(&s->nemc), "nand", &error_abort);
 }
@@ -162,9 +169,29 @@ static void jz4760_realize(DeviceState *dev, Error **errp)
     memory_region_add_subregion(&s->container, 0x10010000, mr);
 
     create_unimplemented_device("AIC",    0x10020000, 0x1000);
-    create_unimplemented_device("MSC0",   0x10021000, 0x1000);
-    create_unimplemented_device("MSC1",   0x10022000, 0x1000);
-    create_unimplemented_device("MSC2",   0x10023000, 0x1000);
+
+    /* MSC0, MSC1, MSC2 */
+    for (i = 0; i < ARRAY_SIZE(s->msc); i++) {
+        hwaddr base = 0x10021000 + 0x1000 * i;
+        char *bus_name = g_strdup_printf("sd-bus%d", i);
+        int sdirq = 37 - i;
+
+        object_property_set_bool(OBJECT(&s->msc[i]), true, "realized", &err);
+        if (err != NULL) {
+            error_propagate(errp, err);
+            return;
+        }
+        mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->msc[i]), 0);
+        memory_region_add_subregion(&s->container, base, mr);
+        sysbus_connect_irq(SYS_BUS_DEVICE(&s->msc[i]), 0,
+                           qdev_get_gpio_in(DEVICE(&s->intc), sdirq));
+
+        /* Alias the controller's SD bus to the SoC itself */
+        object_property_add_alias(OBJECT(s), bus_name,
+                                  OBJECT(&s->msc[i]), "sd-bus",
+                                  &error_abort);
+        g_free(bus_name);
+    }
 
     /* UART0, UART1, UART2, UART3 */
     for (i = 0; i < 4; i++) {
