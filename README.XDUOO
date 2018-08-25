@@ -1,0 +1,69 @@
+This QEMU tree is a work-in-progress model of the XDuoo X3 music player.
+
+
+
+Creating sd card image:
+
+dd if=/dev/zero of=sd.img bs=1M count=256
+/sbin/mkfs.vfat sd.img -F 32
+mkdir tmp-rockbox
+cd tmp-rockbox
+unzip /path/to/rockbox-full-c140430-180720.zip
+mcopy -s -v -i ../sd.img .rockbox ::
+cd ..
+rm -rf tmp-rockbox
+
+Creating mtdblock.img: I copied this off my XDuoo player, using the
+rezerv_copy program from this forum post
+https://www.head-fi.org/threads/xduoo-x3-dsd-24bit-192khz-cs4398-chip-lossless-music-player.782912/page-328#post-14337937
+which just uses the stock firmware to do a copy of the NAND flash partitions.
+You want mtd0.bin.
+
+It ought to be possible to create this locally from the xvtx.ru
+rockbox.bin, but it's not clear to me how. There is clearly some
+relocation going on as the rockbox.bin gets flashed to the NAND,
+because the resulting NAND contents are not just "the rockbox.bin
+with some dead space at the end".
+
+Creating rockboxbios.bin:
+
+This is just the first 8K of rockbox.bin:
+dd if=rockbox.bin  of=rockboxbios.bin bs=4096 count=2
+
+At some point it would be nice if the stunt ROM in jz4760.c
+worked by copying 8K out of NAND rather than relying on the
+board code to load it. (Or perhaps the BIOS image should be
+the ROM-boot code, rather than the start of the NAND image.)
+
+Something is fishy here, because taking the first 8K of
+mtdblock.img does not work. This might be related to not
+understanding how the NAND contents get created from
+rockbox.img; needs investigation.
+
+Command line:
+
+qemu-system-mipsel -M xduoo-x3  -bios rockboxbios.bin  -serial null -serial stdio -display none -drive file=mtdblock.img,format=raw,if=mtd -drive file=sd.img,if=sd,format=raw
+
+At the moment this will get to:
+
+
+SPL Stage 1
+
+pll_init:       done
+pll1_init:      done
+cpu_clk:        492000000
+mem_clk:        123000000
+pll1_clk:       120000000
+sdram_init:     done
+sdram_test:     pass
+nand_load:      done
+
+Starting R-Boot ...
+
+SPL Stage 2
+
+and hang because the SD controllers aren't yet implemented fully.
+
+At some point it might also be nice to wire up -kernel so that you can
+pass the rockbox.x3 binary directly rather than having the S1/S2 loaders
+pull it off the SD card.
