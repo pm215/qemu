@@ -123,6 +123,152 @@ REG32(LPM, 0x40)
 
 static void jz4760_sd_reset(DeviceState *dev)
 {
+    JZ4760SD *s = JZ4760_SD(dev);
+
+    s->stat = 0x40;
+    s->clkrt = 0;
+    s->cmdat = 0;
+    s->resto = 0x40;
+    s->rdto = 0xffff;
+    s->blklen = 0;
+    s->nob = 0;
+    s->snob = 0;
+    s->imask = 0xff;
+    s->ireg = 0;
+    s->arg = 0;
+    s->lpm = 0;
+
+    memset(&s->response, 0, sizeof(s->response));
+    s->response_read_ptr = 0;
+    s->response_len = 0;
+
+    fifo32_reset(&s->datafifo);
+}
+
+static void jz4760_sd_recalc_ireg(JZ4760SD *s)
+{
+    /*
+     * Set bits in IREG according to current status.
+     * Unfortunately the bit order in STAT doesn't line up with IREG
+     * TODO suspect this is wrong and really the IREG bit should
+     * only be set when the condition becomes true.
+     * XXX when does the STAT bit clear ?
+     */
+    if (s->stat & R_STAT_AUTO_CMD_DONE_MASK) {
+        s->ireg |= R_IREG_AUTO_CMD_DONE_MASK;
+    }
+    if (s->stat & R_STAT_DATA_FIFO_FULL_MASK) {
+        s->ireg |= R_IREG_DATA_FIFO_FULL_MASK;
+    }
+    if (s->stat & R_STAT_DATA_FIFO_EMPTY_MASK) {
+        s->ireg |= R_IREG_DATA_FIFO_EMP_MASK;
+    }
+    if (s->stat & R_STAT_CRC_RES_ERR_MASK) {
+        s->ireg |= R_IREG_CRC_RES_ERR_MASK;
+    }
+    if (s->stat & R_STAT_CRC_READ_ERROR_MASK) {
+        s->ireg |= R_IREG_CRC_READ_ERR_MASK;
+    }
+    if (s->stat & R_STAT_CRC_WRITE_ERROR_MASK) {
+        s->ireg |= R_IREG_CRC_WRITE_ERR_MASK;
+    }
+    if (s->stat & R_STAT_TIME_OUT_RES_MASK) {
+        s->ireg |= R_IREG_TIME_OUT_RES_MASK;
+    }
+    if (s->stat & R_STAT_TIME_OUT_READ_MASK) {
+        s->ireg |= R_IREG_TIME_OUT_READ_MASK;
+    }
+    if (s->stat & R_STAT_SDIO_INT_ACTIVE_MASK) {
+        s->ireg |= R_IREG_SDIO_MASK;
+    }
+    if (s->stat & R_STAT_END_CMD_RES_MASK) {
+        s->ireg |= R_IREG_END_CMD_RES_MASK;
+    }
+    if (s->stat & R_STAT_PRG_DONE_MASK) {
+        s->ireg |= R_IREG_PRG_DONE_MASK;
+    }
+    if (s->stat & R_STAT_DATA_TRAN_DONE_MASK) {
+        s->ireg |= R_IREG_DATA_TRAN_DONE_MASK;
+    }
+    // TODO TXFIFO_WR_REG and RXFIFO_RD_REQ
+}
+
+static void jz4760_sd_irq_update(JZ4760SD *s)
+{
+    bool level = s->ireg & ~s->imask;
+
+    qemu_set_irq(s->irq, level);
+}
+
+static void jz4760_sd_send_command(JZ4760SD *s)
+{
+    /* Send command to the SD card */
+    SDRequest request;
+
+    request.cmd = s->cmd;
+    request.arg = s->arg;
+
+    s->stat &= ~R_STAT_DATA_TRAN_DONE_MASK;
+    s->stat &= ~R_STAT_PRG_DONE_MASK;
+
+    if (s->cmdat & R_CMDAT_DATA_EN_MASK) {
+        fifo32_reset(&s->datafifo);
+        s->stat &= ~(R_STAT_DATA_FIFO_FULL_MASK | R_STAT_DATA_FIFO_AFULL_MASK);
+        s->stat |= R_STAT_DATA_FIFO_EMPTY_MASK;
+    }
+
+    /*
+     * The RSP FIFO gets a fairly "raw" view of the response:
+     * an R1 response includes
+     * leading 0 start and transmission bits, 6 bits of cmd index,
+     * then the 32 bits of status, and then 8 bits of ignored
+     * which appear in the FIFO as [47:32], [31:16], [15:0].
+     * TODO not completely clear whether the low 8 bits of actual
+     * status go in [15:8] of the last halfword or [7:0].
+     * For an R2 response, which is 136 bits on the wire,
+     * the fifo has bits [135:8] of the response, and [7:0] (crc?) are dropped
+     * so it will need 8 lots of 16 bit reads.
+     *
+     * sdbus_do_command() provides us with a slightly more "cooked" view:
+     * R1 responses are written as the 4 status bytes into the response buffer
+     * R2 responses are 16 bytes, including the CRC and the end bit but
+     * not the start/reserved bits.
+     * So we get sdbus_do_command() to start at byte 1 in the buffer,
+     * leaving byte 0 for the start/transmission/command fields.
+     */
+    s->response_len = sdbus_do_command(&s->sdbus, &request, s->response + 1);
+
+    // TODO there are probably status bits to handle here
+
+    switch (s->response_len) {
+    case 0:
+        break;
+    case 4:
+        s->response[0] = s->cmd;
+        s->response[5] = 0;
+        s->response_len += 2;
+        break;
+    case 16:
+        s->response[0] = 0x3f;
+        break;
+    default:
+        g_assert_not_reached();
+    }
+
+    s->stat |= R_STAT_END_CMD_RES_MASK;
+
+    jz4760_sd_recalc_ireg(s);
+    jz4760_sd_irq_update(s);
+}
+
+static void jz4760_sd_run_fifo(JZ4760SD *s)
+{
+    /*
+     * The guest has just either pushed data into (TX) or read data
+     * from (RX) the data FIFO. Handle this by either sending the
+     * data to the card or reading more data from the card to refill.
+     */
+    // TODO
 }
 
 static int regwidth(hwaddr addr)
@@ -146,6 +292,7 @@ static int regwidth(hwaddr addr)
 
 static uint64_t jz4760_sd_read(void *opaque, hwaddr addr, unsigned size)
 {
+    JZ4760SD *s = opaque;
     uint64_t r = 0;
 
     /*
@@ -161,6 +308,63 @@ static uint64_t jz4760_sd_read(void *opaque, hwaddr addr, unsigned size)
     }
 
     switch (addr) {
+    case A_STAT:
+        r = s->stat;
+        break;
+    case A_CLKRT:
+        r = s->clkrt;
+        break;
+    case A_CMDAT:
+        r = s->cmdat;
+        break;
+    case A_RESTO:
+        r = s->resto;
+        break;
+    case A_RDTO:
+        r = s->rdto;
+        break;
+    case A_BLKLEN:
+        r = s->blklen;
+        break;
+    case A_NOB:
+        r = s->nob;
+        break;
+    case A_SNOB:
+        r = s->snob;
+        break;
+    case A_IMASK:
+        r = s->imask;
+        break;
+    case A_IREG:
+        r = s->ireg;
+        break;
+    case A_CMD:
+        r = s->cmd;
+        break;
+    case A_ARG:
+        r = s->arg;
+        break;
+    case A_RES:
+        if (s->response_read_ptr >= s->response_len - 1 ||
+            s->response_len >= ARRAY_SIZE(s->response)) {
+            r = 0;
+        } else {
+            r = s->response[s->response_read_ptr++] << 8;
+            r |= s->response[s->response_read_ptr++];
+        }
+        break;
+    case A_RXFIFO:
+        if (fifo32_is_empty(&s->datafifo)) {
+            qemu_log_mask(LOG_GUEST_ERROR, "jz4760 SD: RXFIFO overrun\n");
+            r = 0;
+        } else {
+            r = fifo32_pop(&s->datafifo);
+            jz4760_sd_run_fifo(s);
+        }
+        break;
+    case A_LPM:
+        r = s->lpm;
+        break;
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
                       "jz4760 SD read: bad offset 0x%x\n", (uint32_t)addr);
@@ -176,6 +380,7 @@ out:
 static void jz4760_sd_write(void *opaque, hwaddr addr, uint64_t val,
                              unsigned size)
 {
+    JZ4760SD *s = opaque;
     trace_jz4760_sd_write(addr, val, size);
 
     if (size != regwidth(addr)) {
@@ -186,8 +391,79 @@ static void jz4760_sd_write(void *opaque, hwaddr addr, uint64_t val,
         return;
     }
 
-
     switch (addr) {
+    case A_CTRL:
+        /* Write-only register with various "now do this" bits */
+        if (val & R_CTRL_RESET_MASK) {
+            jz4760_sd_reset(DEVICE(s));
+            jz4760_sd_irq_update(s);
+            /* Assume that reset is the only thing that happens */
+            break;
+        }
+        /* All we do for clock control is remember if clock is on or off */
+        switch (FIELD_EX32(val, CTRL, CLOCK_CONTROL)) {
+        case 1:
+            s->stat &= ~R_STAT_CLK_EN_MASK;
+            break;
+        case 2:
+            s->stat |= R_STAT_CLK_EN_MASK;
+            break;
+        default:
+            break;
+        }
+        if (val & R_CTRL_START_OP_MASK) {
+            jz4760_sd_send_command(s);
+        }
+        // TODO other bits
+        break;
+    case A_CLKRT:
+        s->clkrt = val & R_CLKRT_CLK_RATE_MASK;
+        break;
+    case A_CMDAT:
+        s->cmdat = val & R_CMDAT_VALID_MASK;
+        if (!(s->cmdat & R_CMDAT_DMA_EN_MASK)) {
+            s->ireg &= ~(R_IREG_RXFIFO_RD_REQ_MASK | R_IREG_TXFIFO_WR_REQ_MASK);
+            jz4760_sd_irq_update(s);
+        }
+        break;
+    case A_RESTO:
+        s->resto = val & R_RESTO_RES_TO_MASK;
+        break;
+    case A_RDTO:
+        s->rdto = val;
+        break;
+    case A_BLKLEN:
+        s->blklen = val;
+        break;
+    case A_NOB:
+        s->nob = val;
+        break;
+    case A_IMASK:
+        s->imask = val & R_IREG_VALID_MASK;
+        jz4760_sd_irq_update(s);
+        break;
+    case A_IREG:
+        /* Write-one-to-clear */
+        s->imask &= ~(val & R_IREG_VALID_MASK);
+        jz4760_sd_irq_update(s);
+        break;
+    case A_CMD:
+        s->cmd = val & R_CMD_CMD_INDEX_MASK;
+        break;
+    case A_ARG:
+        s->arg = val;
+        break;
+    case A_TXFIFO:
+        if (fifo32_is_full(&s->datafifo)) {
+            qemu_log_mask(LOG_GUEST_ERROR, "jz4760 SD: TXFIFO overrun\n");
+        } else {
+            fifo32_push(&s->datafifo, val);
+            jz4760_sd_run_fifo(s);
+        }
+        break;
+    case A_LPM:
+        s->lpm = val & R_LPM_LPM_MASK;
+        break;
     default:
         qemu_log_mask(LOG_GUEST_ERROR,
                       "jz4760 SD write: bad offset 0x%x\n", (uint32_t)addr);
@@ -230,6 +506,9 @@ static void jz4760_sd_init(Object *obj)
 
 static void jz4760_sd_realize(DeviceState *dev, Error **errp)
 {
+    JZ4760SD *s = JZ4760_SD(dev);
+
+    fifo32_create(&s->datafifo, 16);
 }
 
 static const VMStateDescription jz4760_sd_vmstate = {
@@ -237,6 +516,23 @@ static const VMStateDescription jz4760_sd_vmstate = {
     .version_id = 1,
     .minimum_version_id = 1,
     .fields = (VMStateField[]) {
+        VMSTATE_UINT32(stat, JZ4760SD),
+        VMSTATE_UINT32(clkrt, JZ4760SD),
+        VMSTATE_UINT32(cmdat, JZ4760SD),
+        VMSTATE_UINT32(resto, JZ4760SD),
+        VMSTATE_UINT32(rdto, JZ4760SD),
+        VMSTATE_UINT32(blklen, JZ4760SD),
+        VMSTATE_UINT32(nob, JZ4760SD),
+        VMSTATE_UINT32(snob, JZ4760SD),
+        VMSTATE_UINT32(imask, JZ4760SD),
+        VMSTATE_UINT32(ireg, JZ4760SD),
+        VMSTATE_UINT32(cmd, JZ4760SD),
+        VMSTATE_UINT32(arg, JZ4760SD),
+        VMSTATE_UINT32(lpm, JZ4760SD),
+        VMSTATE_UINT8_ARRAY(response, JZ4760SD, 17),
+        VMSTATE_UINT32(response_read_ptr, JZ4760SD),
+        VMSTATE_UINT32(response_len, JZ4760SD),
+        VMSTATE_FIFO32(datafifo, JZ4760SD),
         VMSTATE_END_OF_LIST()
     }
 };

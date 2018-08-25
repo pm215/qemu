@@ -25,6 +25,7 @@
 #define HW_MISC_JZ4760_SD_H
 
 #include "hw/sd/sd.h"
+#include "qemu/fifo32.h"
 
 #define TYPE_JZ4760_SD "jz4760-sd"
 #define JZ4760_SD(obj) OBJECT_CHECK(JZ4760SD, obj, TYPE_JZ4760_SD)
@@ -40,6 +41,35 @@ typedef struct JZ4760SD {
 
     /*< public >*/
     SDBus sdbus;
+
+    uint32_t stat;
+    uint32_t clkrt;
+    uint32_t cmdat;
+    uint32_t resto;
+    uint32_t rdto;
+    uint32_t blklen;
+    uint32_t nob;
+    uint32_t snob;
+    uint32_t imask;
+    uint32_t ireg;
+    uint32_t cmd;
+    uint32_t arg;
+    uint32_t lpm;
+
+    /*
+     * RES FIFO : includes one extra byte to allow for the
+     * R2 response CRC byte, which the guest does not see
+     * but which sdbus_do_command() writes.
+     */
+    uint8_t response[17];
+    uint32_t response_read_ptr;
+    uint32_t response_len;
+
+    /*
+     * RXFIFO/TXFIFO: a 16-entry 32-bit FIFO shared between
+     * receive and transmit
+     */
+    Fifo32 datafifo;
 
     MemoryRegion iomem;
     qemu_irq irq;
