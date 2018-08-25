@@ -41,6 +41,7 @@ static void xduoo_x3_init(MachineState *machine)
     XDuooX3MachineState *xms = XDUOO_X3_MACHINE(machine);
     MemoryRegion *system_memory = get_system_memory();
     DriveInfo *dinfo = drive_get_next(IF_MTD);
+    int i;
 
     xms->nand = nand_init(dinfo ? blk_by_legacy_dinfo(dinfo) : NULL,
                           0x98, 0xb1);
@@ -53,6 +54,33 @@ static void xduoo_x3_init(MachineState *machine)
                              "nand", &error_fatal);
     object_property_set_bool(OBJECT(&xms->jz4760), true, "realized",
                              &error_fatal);
+
+    /* Create and plug in the SD cards */
+    for (i = 0; i < JZ4760_NUM_SD; i++) {
+        BusState *bus;
+        DriveInfo *di = drive_get_next(IF_SD);
+        BlockBackend *blk;
+        DeviceState *carddev;
+        char *busname;
+
+        /* Don't create a card unless the user specifies that we have one */
+        if (!di) {
+            break;
+        }
+
+        blk = blk_by_legacy_dinfo(di);
+        busname = g_strdup_printf("sd-bus%d", i);
+        bus = qdev_get_child_bus(DEVICE(&xms->jz4760), busname);
+        g_free(busname);
+        if (!bus) {
+            error_report("No SD bus found for SD card %d", i);
+            exit(1);
+        }
+        carddev = qdev_create(bus, TYPE_SD_CARD);
+        qdev_prop_set_drive(carddev, "drive", blk, &error_fatal);
+        object_property_set_bool(OBJECT(carddev), true, "realized",
+                                 &error_fatal);
+    }
 
     memory_region_allocate_system_memory(&xms->sram,
                                          NULL, "sram", 32 * MiB);
