@@ -11,6 +11,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
+#include "qemu/timer.h"
 #include "hw/sysbus.h"
 #include "hw/registerfields.h"
 #include "trace.h"
@@ -23,6 +24,15 @@
  * (2) the WDT ("watchdog timer"), which is a 16-bit upcounter
  * (3) 8 identical counter modules, each of which is a 16-bit upcounter
  */
+
+#define RTCLK_FRQ 32768
+/*
+ * TODO: EXCLK, PCLK are board-specific. PCLK is almost certainly
+ * wrong and in any case it's guest tweakable via the CPM, but rockbox
+ * doesn't use it for timers so ignore that for now.
+ */
+#define EXCLK_FRQ 12000000
+#define PCLK_FRQ 492000000
 
 /* Common registers -- offset is from base of the TCU register bank */
 REG32(TSTR, 0xf0)
@@ -125,6 +135,125 @@ REG32(TCSR, 0xc)
  * register and a simple enable.
  */
 
+/* OST TODO:
+ *  - need upcounter_set/get_compare() functions
+ *  - wire those into OSTDR read/write
+ *  - need to wire up OST enable bit in TER
+ *  - ugh, OSTCSR has a CNT_MD that lets the counter either clear to zero on
+ *    compare, or increase...
+ *  - the 'timer fire' codepath and logic is missing
+ */
+
+
+static void upcounter_init(JZ4760UpCounter *uc, QEMUTimerCB *cb, void *opaque)
+{
+    timer_init_ns(&uc->timer, QEMU_CLOCK_VIRTUAL, cb, opaque);
+    uc->frq = 0;
+    uc->enabled = false;
+}
+
+static void upcounter_reload(JZ4760UpCounter *uc)
+{
+    /* set the timer to expire when the count will hit the compare value */
+    uint32_t ticks = uc->compare - uc->count;
+    int64_t next_event = uc->last_event;
+
+    next_event += muldiv64(ticks, NANOSECONDS_PER_SECOND, uc->frq);
+    timer_mod(&uc->timer, next_event);
+}
+
+static uint32_t upcounter_get_count(JZ4760UpCounter *uc)
+{
+    int64_t now, elapsed;
+    uint64_t ticks;
+
+    if (!uc->enabled) {
+        return uc->count;
+    }
+
+    now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    elapsed = now - uc->last_event;
+
+    /*
+     * Round elapsed time down to a whole number of counter ticks, so we
+     * don't lose time if we do multiple resyncs in a single tick.
+     */
+    ticks = muldiv64(elapsed, uc->frq, NANOSECONDS_PER_SECOND);
+
+    uc->count += ticks;
+    /*
+     * Only advance the sync time to the timestamp of the last counter tick,
+     * not all the way to 'now', so we don't lose time if we do multiple
+     * resyncs in a single tick.
+     */
+    uc->last_event += muldiv64(ticks, NANOSECONDS_PER_SECOND, uc->frq);
+
+    return uc->count;
+}
+
+static void upcounter_stop(JZ4760UpCounter *uc)
+{
+    if (!uc->enabled) {
+        return;
+    }
+
+    uc->count = upcounter_get_count(uc);
+    timer_del(&uc->timer);
+    uc->enabled = false;
+}
+
+static void upcounter_set_count(JZ4760UpCounter *uc, uint32_t value)
+{
+    uc->count = value;
+    if (uc->enabled) {
+        uc->last_event = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+        upcounter_reload(uc);
+    }
+}
+
+static void upcounter_run(JZ4760UpCounter *uc)
+{
+    if (uc->enabled) {
+        return;
+    }
+
+    assert(uc->frq);
+
+    uc->last_event = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    upcounter_reload(uc);
+}
+
+static void upcounter_set_frq(JZ4760UpCounter *uc, uint32_t frq)
+{
+    if (!uc->enabled) {
+        uc->frq = frq;
+        return;
+    }
+
+    upcounter_stop(uc);
+    uc->frq = frq;
+    upcounter_run(uc);
+}
+
+static void jz4760_ostimer_update(void *opaque)
+{
+    JZ4760TCU *s = opaque;
+
+    upcounter_reload(&s->oscounter);
+    // TODO actually fire interrupt, etc
+}
+
+static void jz4760_wdtimer_update(void *opaque)
+{
+//    JZ4760TCU *s = opaque;
+}
+
+static void jz4760_counter_update(void *opaque)
+{
+//    JZ4760TCUCounter *c = opaque;
+//    JZ4760TCU *s = c->parent;
+}
+
 static int regwidth(hwaddr addr)
 {
     switch (addr) {
@@ -206,7 +335,7 @@ static uint64_t jz4760_tcu_read(void *opaque, hwaddr addr, unsigned size)
         r = s->ostdr;
         break;
     case A_OSTCNT:
-        r = s->ostcnt;
+        r = upcounter_get_count(&s->oscounter);
         break;
     case A_OSTCSR:
         r = s->ostcsr;
@@ -304,7 +433,7 @@ static void jz4760_tcu_write(void *opaque, hwaddr addr, uint64_t val,
         s->ostdr = val;
         break;
     case A_OSTCNT:
-        s->ostcnt = val;
+        upcounter_set_count(&s->oscounter, val);
         break;
     case A_OSTCSR:
         s->ostcsr = val & R_OSTCSR_VALID_MASK;
@@ -349,7 +478,6 @@ static void jz4760_tcu_reset(DeviceState *dev)
     s->tmr = 0;
 
     s->ostdr = 0;
-    s->ostcnt = 0;
     s->ostcsr = 0;
 
     s->wdtdr = 0;
@@ -357,7 +485,14 @@ static void jz4760_tcu_reset(DeviceState *dev)
     s->wdtcnt = 0;
     s->wdtcsr = 0;
 
+    upcounter_stop(&s->oscounter);
+    upcounter_stop(&s->wdcounter);
+    upcounter_set_count(&s->oscounter, 0);
+    upcounter_set_count(&s->wdcounter, 0);
+
     for (i = 0; i < ARRAY_SIZE(s->counter); i++) {
+        upcounter_stop(&s->counter[i].upcounter);
+        upcounter_set_count(&s->counter[i].upcounter, 0);
         s->counter[i].tdfr = 0;
         s->counter[i].tdhr = 0;
         s->counter[i].tcnt = 0;
@@ -382,7 +517,31 @@ static void jz4760_tcu_init(Object *obj)
 
 static void jz4760_tcu_realize(DeviceState *dev, Error **errp)
 {
+    JZ4760TCU *s = JZ4760_TCU(dev);
+    int i;
+
+    upcounter_init(&s->oscounter, jz4760_ostimer_update, s);
+    upcounter_init(&s->wdcounter, jz4760_wdtimer_update, s);
+    /* TODO not really right */
+    upcounter_set_frq(&s->oscounter, EXCLK_FRQ);
+    upcounter_set_frq(&s->wdcounter, EXCLK_FRQ);
+
+    for (i = 0; i < ARRAY_SIZE(s->counter); i++) {
+        s->counter[i].parent = s;
+        upcounter_init(&s->counter[i].upcounter,
+                      jz4760_counter_update, &s->counter);
+    }
 }
+
+static const VMStateDescription upcounter_vmstate = {
+    .name = "jz4760-upcounter",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (VMStateField[]) {
+        VMSTATE_TIMER(timer, JZ4760UpCounter),
+        VMSTATE_END_OF_LIST()
+    }
+};
 
 static const VMStateDescription jz4760_tcu_counter_vmstate = {
     .name = "jz4760-tcu-counter",
@@ -393,6 +552,8 @@ static const VMStateDescription jz4760_tcu_counter_vmstate = {
         VMSTATE_UINT16(tdhr, JZ4760TCUCounter),
         VMSTATE_UINT16(tcnt, JZ4760TCUCounter),
         VMSTATE_UINT16(tcsr, JZ4760TCUCounter),
+        VMSTATE_STRUCT(upcounter, JZ4760TCUCounter, 1,
+                       upcounter_vmstate, JZ4760UpCounter),
         VMSTATE_END_OF_LIST()
     }
 };
@@ -411,12 +572,15 @@ static const VMStateDescription jz4760_tcu_vmstate = {
         VMSTATE_UINT32(tfr, JZ4760TCU),
         VMSTATE_UINT32(tmr, JZ4760TCU),
         VMSTATE_UINT32(ostdr, JZ4760TCU),
-        VMSTATE_UINT32(ostcnt, JZ4760TCU),
         VMSTATE_UINT16(ostcsr, JZ4760TCU),
         VMSTATE_UINT16(wdtdr, JZ4760TCU),
         VMSTATE_UINT8(wdtcer, JZ4760TCU),
         VMSTATE_UINT16(wdtcnt, JZ4760TCU),
         VMSTATE_UINT16(wdtcsr, JZ4760TCU),
+        VMSTATE_STRUCT(oscounter, JZ4760TCU, 1,
+                       upcounter_vmstate, JZ4760UpCounter),
+        VMSTATE_STRUCT(wdcounter, JZ4760TCU, 1,
+                       upcounter_vmstate, JZ4760UpCounter),
         VMSTATE_END_OF_LIST()
     }
 };
