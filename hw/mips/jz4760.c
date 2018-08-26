@@ -77,6 +77,8 @@ static void jz4760_init(Object *obj)
                               TYPE_JZ4760_SD);
         g_free(name);
     }
+    sysbus_init_child_obj(obj, "tcu", &s->tcu, sizeof(s->tcu),
+                          TYPE_JZ4760_TCU);
     object_property_add_alias(obj, "nand",
                               OBJECT(&s->nemc), "nand", &error_abort);
 }
@@ -156,7 +158,19 @@ static void jz4760_realize(DeviceState *dev, Error **errp)
     /* MIPS CPU INT0 */
     sysbus_connect_irq(SYS_BUS_DEVICE(&s->intc), 0, s->cpu->env.irq[2]);
 
-    create_unimplemented_device("TCU",    0x10002000, 0x1000);
+    /* TCU */
+    object_property_set_bool(OBJECT(&s->tcu), true, "realized", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->tcu), 0);
+    memory_region_add_subregion(&s->container, 0x10002000, mr);
+    for (i = 0; i < 3; i++) {
+        sysbus_connect_irq(SYS_BUS_DEVICE(&s->tcu), i,
+                           qdev_get_gpio_in(DEVICE(&s->intc), 27 - i));
+    }
+
     create_unimplemented_device("RTC",    0x10003000, 0x1000);
 
     /* GPIO */

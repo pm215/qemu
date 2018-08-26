@@ -28,6 +28,7 @@
 #include "hw/block/jz4760-nemc.h"
 #include "hw/gpio/jz4760-gpio.h"
 #include "hw/sd/jz4760-sd.h"
+#include "hw/timer/jz4760-tcu.h"
 #include "target/mips/cpu.h"
 
 #define TYPE_JZ4760 "jz4760"
@@ -52,6 +53,7 @@ typedef struct JZ4760 {
     JZ4760NEMC nemc;
     JZ4760GPIO gpio;
     JZ4760SD msc[JZ4760_NUM_SD];
+    JZ4760TCU tcu;
 
     /* Properties */
     MemoryRegion *board_memory;
