@@ -200,3 +200,9 @@ nvic_sysreg_write(uint64_t addr, uint32_t value, unsigned size) "NVIC sysreg wri
 heathrow_write(uint64_t addr, unsigned int n, uint64_t value) "0x%"PRIx64" %u: 0x%"PRIx64
 heathrow_read(uint64_t addr, unsigned int n, uint64_t value) "0x%"PRIx64" %u: 0x%"PRIx64
 heathrow_set_irq(int num, int level) "set_irq: num=0x%02x level=%d"
+
+# hw/intc/jz4760-intc.c
+jz4760_intc_read(uint32_t offset, uint64_t data, unsigned size) "offset 0x%x data 0x%" PRIx64 " size %u"
+jz4760_intc_write(uint32_t offset, uint64_t data, unsigned size) "offset 0x%x data 0x%" PRIx64 " size %u"
+jz4760_intc_irq_set(int n, int level) "interrupt %d level %d"
+
