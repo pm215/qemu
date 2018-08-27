@@ -411,6 +411,21 @@ const mips_def_t mips_defs[] =
         .mmu_type = MMU_TYPE_R4000,
     },
     {
+        .name = "jz4760",
+        .CP0_PRid = 0x2ed0024f,
+        // TODO these are borrowed from the ancient QEMU jz4740 port: check them
+        .CP0_Config0 = MIPS_CONFIG0 | (MMU_TYPE_R4000 << CP0C0_MT),
+        .CP0_Config1 = 0x3E613080,
+        .CP0_Config7 = 0,
+        .SYNCI_Step = 32,
+        .CCRes = 2,
+        .CP0_Status_rw_bitmask = 0x1278FF17,
+        .SEGBITS = 32,
+        .PABITS = 32,
+        .insn_flags = CPU_MIPS32R2 | ASE_MIPS16,
+        .mmu_type = MMU_TYPE_R4000,
+    },
+    {
         /* A generic CPU supporting MIPS32 Release 6 ISA.
            FIXME: Support IEEE 754-2008 FP.
                   Eventually this should be replaced by a real CPU model. */
