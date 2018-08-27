@@ -48,6 +48,9 @@ static void jz4760_init(Object *obj)
     memory_region_init(&s->container, obj, "iotkit-container", UINT64_MAX);
 
     s->cpu = MIPS_CPU(object_new(MIPS_CPU_TYPE_NAME("jz4760")));
+
+    sysbus_init_child_obj(obj, "intc", &s->intc, sizeof(s->intc),
+                          TYPE_JZ4760_INTC);
 }
 
 static void main_cpu_reset(void *opaque)
@@ -61,6 +64,7 @@ static void jz4760_realize(DeviceState *dev, Error **errp)
 {
     JZ4760 *s = JZ4760(dev);
     Error *err = NULL;
+    MemoryRegion *mr;
 
     if (!s->board_memory) {
         error_setg(errp, "memory property was not set");
@@ -103,7 +107,18 @@ static void jz4760_realize(DeviceState *dev, Error **errp)
 
     /* APB bus devices */
     create_unimplemented_device("CPM",    0x10000000, 0x1000);
-    create_unimplemented_device("INTC",   0x10001000, 0x1000);
+
+    /* INTC */
+    object_property_set_bool(OBJECT(&s->intc), true, "realized", &err);
+    if (err != NULL) {
+        error_propagate(errp, err);
+        return;
+    }
+    mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(&s->intc), 0);
+    memory_region_add_subregion(&s->container, 0x10001000, mr);
+    /* MIPS CPU INT0 */
+    sysbus_connect_irq(SYS_BUS_DEVICE(&s->intc), 0, s->cpu->env.irq[2]);
+
     create_unimplemented_device("TCU",    0x10002000, 0x1000);
     create_unimplemented_device("RTC",    0x10003000, 0x1000);
     create_unimplemented_device("GPIO",   0x10010000, 0x1000);

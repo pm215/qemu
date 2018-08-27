@@ -22,6 +22,7 @@
 
 #include "hw/sysbus.h"
 #include "hw/misc/unimp.h"
+#include "hw/intc/jz4760-intc.h"
 #include "target/mips/cpu.h"
 
 #define TYPE_JZ4760 "jz4760"
@@ -36,6 +37,7 @@ typedef struct JZ4760 {
     MIPSCPU *cpu;
     MemoryRegion bootrom;
     MemoryRegion sram_alias;
+    JZ4760INTC intc;
 
     /* Properties */
     MemoryRegion *board_memory;
