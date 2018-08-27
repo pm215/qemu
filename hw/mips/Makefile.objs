@@ -6,3 +6,4 @@ obj-y += gt64xxx_pci.o
 obj-$(CONFIG_MIPS_CPS) += cps.o
 obj-$(CONFIG_MIPS_BOSTON) += boston.o
 obj-$(CONFIG_JZ4760) += jz4760.o
+obj-$(CONFIG_MIPS_XDUOO_X3) += xduoo-x3.o
