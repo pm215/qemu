@@ -132,3 +132,7 @@ iotkit_sysinfo_write(uint64_t offset, uint64_t data, unsigned size) "IoTKit SysI
 iotkit_sysctl_read(uint64_t offset, uint64_t data, unsigned size) "IoTKit SysCtl read: offset 0x%" PRIx64 " data 0x%" PRIx64 " size %u"
 iotkit_sysctl_write(uint64_t offset, uint64_t data, unsigned size) "IoTKit SysCtl write: offset 0x%" PRIx64 " data 0x%" PRIx64 " size %u"
 iotkit_sysctl_reset(void) "IoTKit SysCtl: reset"
+
+# hw/misc/jz4760-cpm.c
+jz4760_cpm_read(uint32_t offset, uint64_t data, unsigned size) "offset 0x%x data 0x%" PRIx64 " size %u"
+jz4760_cpm_write(uint32_t offset, uint64_t data, unsigned size) "offset 0x%x data 0x%" PRIx64 " size %u"
