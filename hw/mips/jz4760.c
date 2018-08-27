@@ -19,6 +19,7 @@
 #include "hw/misc/unimp.h"
 #include "hw/loader.h"
 #include "hw/mips/cpudevs.h"
+#include "hw/char/serial.h"
 
 #define BOOTROM_BASE 0x1fc00000
 
@@ -65,6 +66,7 @@ static void jz4760_realize(DeviceState *dev, Error **errp)
     JZ4760 *s = JZ4760(dev);
     Error *err = NULL;
     MemoryRegion *mr;
+    int i;
 
     if (!s->board_memory) {
         error_setg(errp, "memory property was not set");
@@ -126,10 +128,22 @@ static void jz4760_realize(DeviceState *dev, Error **errp)
     create_unimplemented_device("MSC0",   0x10021000, 0x1000);
     create_unimplemented_device("MSC1",   0x10022000, 0x1000);
     create_unimplemented_device("MSC2",   0x10023000, 0x1000);
-    create_unimplemented_device("UART0",  0x10030000, 0x1000);
-    create_unimplemented_device("UART1",  0x10031000, 0x1000);
-    create_unimplemented_device("UART2",  0x10032000, 0x1000);
-    create_unimplemented_device("UART3",  0x10033000, 0x1000);
+
+    /* UART0, UART1, UART2, UART3 */
+    for (i = 0; i < 4; i++) {
+        hwaddr base = 0x10030000 + 0x1000 * i;
+        int uartirq = 5 - i;
+
+        serial_mm_init(&s->container, base, 2,
+                       qdev_get_gpio_in(DEVICE(&s->intc), uartirq),
+                       115200, serial_hd(i), DEVICE_LITTLE_ENDIAN);
+        /*
+         * The JZ4760 UARTs are 16550 compatible but have extra
+         * registers after the usual set. Stub those out for now.
+         */
+        create_unimplemented_device("UART0 extras", base + 0x20, 0x10);
+    }
+
     create_unimplemented_device("SCC",    0x10040000, 0x1000);
     create_unimplemented_device("SSI0",   0x10043000, 0x1000);
     create_unimplemented_device("SSI1",   0x10044000, 0x1000);
